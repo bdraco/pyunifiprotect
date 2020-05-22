@@ -186,6 +186,8 @@ class UpvServer:
                 json_response = await response.json()
                 cameras = json_response["cameras"]
 
+                _LOGGER.debug("Cameras: %s", cameras)
+
                 for camera in cameras:
                     # Get if camera is online
                     if camera["state"] == "CONNECTED":
