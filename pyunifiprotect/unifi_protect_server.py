@@ -685,6 +685,8 @@ class UpvServer:
     async def _process_ws_events(self, msg):
         json = msg.json()
 
+        _LOGGER.debug("websocket message: %s", json)
+
         if json["type"] != "DEVICE_STATE_CHANGED" or "apps" not in json:
             return
 
