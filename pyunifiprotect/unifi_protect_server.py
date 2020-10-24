@@ -113,6 +113,7 @@ class UpvServer:
             > self._last_websocket_check
         ):
             _LOGGER.debug("Checking websocket")
+            self._last_websocket_check = current_time
             await self.async_connect_ws()
 
         camera_update = False
