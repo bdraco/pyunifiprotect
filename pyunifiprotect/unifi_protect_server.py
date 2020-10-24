@@ -94,6 +94,7 @@ class UpvServer:
         self.headers = None
         self.ws = None
         self.ws_task = None
+        self._ws_subscriptions = []
 
     @property
     def devices(self):
@@ -886,8 +887,21 @@ class UpvServer:
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
 
+    def subscribe_websocket(self, ws_callback):
+        """Subscribe to websocket events.
+
+        Returns a callback that will unsubscribe.
+        """
+
+        def _unsub_ws_callback():
+            self._ws_subscriptions.remove(ws_callback)
+
+        _LOGGER.debug("Adding subscription: %s", ws_callback)
+        self._ws_subscriptions.append(ws_callback)
+        return _unsub_ws_callback
+
     async def _process_ws_events(self, msg):
-        _LOGGER.debug("websocket message: %s", msg.data)
+        """Process websocket messages."""
         try:
             action_frame, action_frame_payload_format, position = _decode_frame(
                 msg.data, 0
@@ -932,14 +946,15 @@ class UpvServer:
         if camera_id not in self.device_data:
             return
 
-        _LOGGER.debug("device_data: %s", self.device_data)
-
         if last_motion is not None:
             self.device_data[camera_id]["last_motion"] = last_motion
             _LOGGER.debug("Last Motion Set: %s at %s", camera_id, last_motion)
         if last_ring is not None:
             self.device_data[camera_id]["last_ring"] = last_ring
             _LOGGER.debug("Last Ring Set: %s at %s", camera_id, last_ring)
+
+        for subscriber in self._ws_subscriptions:
+            subscriber(action_json, data_json)
 
 
 def _decode_frame(frame, position):

@@ -13,6 +13,8 @@ UFP_PASSWORD = "YOUR PASSWORD"
 UFP_IPADDRESS = "IP ADDRESS OF UFP"
 UFP_PORT = 443
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def event_data():
     session = ClientSession(cookie_jar=CookieJar(unsafe=True))
@@ -28,12 +30,18 @@ async def event_data():
 
     await unifiprotect.update()
 
+    unsub = unifiprotect.subscribe_websocket(subscriber)
+
     for i in range(15000):
-        data = await unifiprotect.get_raw_events(10)
         await asyncio.sleep(1)
 
     # Close the Session
     await session.close()
+    unsub()
+
+
+def subscriber(action_json, data_json):
+    _LOGGER.info("Subscription: action=%s data=%s", action_json, data_json)
 
 
 logging.basicConfig(level=logging.DEBUG)
