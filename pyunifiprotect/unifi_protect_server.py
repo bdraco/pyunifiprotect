@@ -32,7 +32,7 @@ WS_HEADER_SIZE = 8
 
 
 @enum.unique
-class ProductWSPayloadFormat(enum.Enum):
+class ProtectWSPayloadFormat(enum.Enum):
     """Websocket Payload formats."""
 
     JSON = 1
@@ -908,7 +908,7 @@ class UpvServer:
             _LOGGER.exception("Error processing action frame")
             return
 
-        if action_frame_payload_format != ProductWSPayloadFormat.JSON:
+        if action_frame_payload_format != ProtectWSPayloadFormat.JSON:
             return
 
         action_json = json.loads(action_frame)
@@ -926,7 +926,7 @@ class UpvServer:
             _LOGGER.exception("Error processing data frame")
             return
 
-        if data_frame_payload_format != ProductWSPayloadFormat.JSON:
+        if data_frame_payload_format != ProtectWSPayloadFormat.JSON:
             return
 
         data_json = json.loads(data_frame)
@@ -967,4 +967,4 @@ def _decode_frame(frame, position):
     if deflated:
         frame = zlib.decompress(frame)
     position += payload_size
-    return frame, ProductWSPayloadFormat(payload_format), position
+    return frame, ProtectWSPayloadFormat(payload_format), position
