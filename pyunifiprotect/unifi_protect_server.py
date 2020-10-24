@@ -112,6 +112,7 @@ class UpvServer:
             and (current_time - WEBSOCKET_CHECK_INTERVAL_SECONDS)
             > self._last_websocket_check
         ):
+            _LOGGER.debug("Checking websocket")
             await self.async_connect_ws()
 
         camera_update = False
@@ -128,6 +129,7 @@ class UpvServer:
         # If the websocket is connected
         # we do not need to get events
         if self.ws and not camera_update:
+            _LOGGER.debug("Skipping update since websocket is active")
             return {}
 
         self._reset_camera_events()
