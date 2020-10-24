@@ -875,15 +875,14 @@ class UpvServer:
         session = aiohttp.ClientSession()
         _LOGGER.debug("WS connecting to: %s", url)
 
-        async with session.ws_connect(
+        self.ws = await session.ws_connect(
             url, verify_ssl=self._verify_ssl, headers=self.headers
-        ) as ws:
-            self.ws = ws
-            async for msg in ws:
-                if msg.type == aiohttp.WSMsgType.BINARY:
-                    await self._process_ws_events(msg)
-                elif msg.type == aiohttp.WSMsgType.ERROR:
-                    break
+        )
+        async for msg in self.ws:
+            if msg.type == aiohttp.WSMsgType.BINARY:
+                await self._process_ws_events(msg)
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                break
 
     def subscribe_websocket(self, ws_callback):
         """Subscribe to websocket events.
