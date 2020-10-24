@@ -122,7 +122,7 @@ class UpvServer:
             _LOGGER.debug("Doing camera update")
             camera_update = True
             await self._get_camera_list()
-            self._last_camera_update_time = time.time()
+            self._last_camera_update_time = current_time
         else:
             _LOGGER.debug("Skipping camera update")
 
