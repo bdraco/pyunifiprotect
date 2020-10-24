@@ -105,27 +105,29 @@ class UpvServer:
         """Updates the status of devices."""
 
         current_time = time.time()
-
+        camera_update = False
         if (
             current_time - CAMERA_UPDATE_INTERVAL_SECONDS
         ) > self._last_camera_update_time:
             _LOGGER.debug("Doing camera update")
+            camera_update = True
             await self._get_camera_list()
             self._last_camera_update_time = time.time()
         else:
             _LOGGER.debug("Skipping camera update")
 
         self._reset_camera_events()
-        await self._get_events()
+        updates = await self._get_events()
 
-        await self.async_connect_ws()
-
-        return self.devices
+        if camera_update:
+            return self.devices
+        return updates
 
     async def async_connect_ws(self):
         """Connect the websocket."""
         if self.ws is not None:
             return
+
         if self.ws_task is not None:
             try:
                 self.ws_task.cancel()
