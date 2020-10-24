@@ -110,23 +110,32 @@ class UpvServer:
         ) > self._last_camera_update_time:
             _LOGGER.debug("Doing camera update")
             await self._get_camera_list()
-            self._last_camera_update_time = current_time
+            self._last_camera_update_time = time.time()
         else:
             _LOGGER.debug("Skipping camera update")
 
-        self._reset_camera_events()
-        await self._get_events(10)
+        await self.async_update_events(lookback=10)
 
-        if self.ws is None:
-            if self.ws_task is not None:
-                try:
-                    self.ws_task.cancel()
-                    self.ws = None
-                except Exception as e:
-                    _LOGGER.debug("Could not cancel ws_task")
-            self.ws_task = asyncio.ensure_future(self._setup_websocket())
+        await self.async_connect_ws()
 
         return self.devices
+
+    async def async_connect_ws(self):
+        """Connect the websocket."""
+        if self.ws is not None:
+            return
+        if self.ws_task is not None:
+            try:
+                self.ws_task.cancel()
+                self.ws = None
+            except Exception as e:
+                _LOGGER.debug("Could not cancel ws_task")
+        self.ws_task = asyncio.ensure_future(self._setup_websocket())
+
+    async def async_update_events(self, lookback: int = 10):
+        """Update events from the bootstrap endpoint."""
+        self._reset_camera_events()
+        return await self._get_events(lookback)
 
     async def unique_id(self):
         """Returns a Unique ID for this NVR."""
@@ -210,7 +219,9 @@ class UpvServer:
 
         access_key_uri = f"{self._base_url}/{self.api_path}/auth/access-key"
         async with self.req.post(
-            access_key_uri, headers=self.headers, verify_ssl=self._verify_ssl,
+            access_key_uri,
+            headers=self.headers,
+            verify_ssl=self._verify_ssl,
         ) as response:
             if response.status == 200:
                 json_response = await response.json()
@@ -227,7 +238,9 @@ class UpvServer:
 
         bootstrap_uri = f"{self._base_url}/{self.api_path}/bootstrap"
         async with self.req.get(
-            bootstrap_uri, headers=self.headers, verify_ssl=self._verify_ssl,
+            bootstrap_uri,
+            headers=self.headers,
+            verify_ssl=self._verify_ssl,
         ) as response:
             if response.status == 200:
                 json_response = await response.json()
@@ -245,7 +258,9 @@ class UpvServer:
 
         bootstrap_uri = f"{self._base_url}/{self.api_path}/bootstrap"
         async with self.req.get(
-            bootstrap_uri, headers=self.headers, verify_ssl=self._verify_ssl,
+            bootstrap_uri,
+            headers=self.headers,
+            verify_ssl=self._verify_ssl,
         ) as response:
             if response.status == 200:
                 json_response = await response.json()
@@ -267,11 +282,12 @@ class UpvServer:
 
         bootstrap_uri = f"{self._base_url}/{self.api_path}/bootstrap"
         async with self.req.get(
-            bootstrap_uri, headers=self.headers, verify_ssl=self._verify_ssl,
+            bootstrap_uri,
+            headers=self.headers,
+            verify_ssl=self._verify_ssl,
         ) as response:
             if response.status == 200:
                 json_response = await response.json()
-                self.last_update_id = json_response["lastUpdateId"]
                 server_id = json_response["nvr"]["mac"]
 
                 cameras = json_response["cameras"]
@@ -328,7 +344,9 @@ class UpvServer:
                         channels = camera["channels"]
                         for channel in channels:
                             if channel["isRtspEnabled"]:
-                                rtsp = f"rtsp://{self._host}:7447/{channel['rtspAlias']}"
+                                rtsp = (
+                                    f"rtsp://{self._host}:7447/{channel['rtspAlias']}"
+                                )
                                 break
 
                         item = {
@@ -392,89 +410,85 @@ class UpvServer:
             "end": str(end_time),
             "start": str(start_time),
         }
-        async with self.req.get(
-            event_uri, params=params, headers=self.headers, verify_ssl=self._verify_ssl,
-        ) as response:
-            if response.status == 200:
-                events = await response.json()
-                for event in events:
-                    camera_id = event["camera"]
+        response = await self.req.get(
+            event_uri,
+            params=params,
+            headers=self.headers,
+            verify_ssl=self._verify_ssl,
+        )
+        if response.status != 200:
+            raise NvrError(
+                f"Fetching Eventlog failed: {response.status} - Reason: {response.reason}"
+            )
+        events = await response.json()
+        updated = {}
+        for event in events:
+            camera_id = event["camera"]
 
-                    if (
-                        event["type"] == "motion"
-                        or event["type"] == "ring"
-                        or event["type"] == "smartDetectZone"
-                    ):
-                        if event["start"]:
-                            start_time = datetime.datetime.fromtimestamp(
-                                int(event["start"]) / 1000
-                            ).strftime("%Y-%m-%d %H:%M:%S")
-                            event_length = 0
+            if (
+                event["type"] == "motion"
+                or event["type"] == "ring"
+                or event["type"] == "smartDetectZone"
+            ):
+                if event["start"]:
+                    start_time = datetime.datetime.fromtimestamp(
+                        int(event["start"]) / 1000
+                    ).strftime("%Y-%m-%d %H:%M:%S")
+                    event_length = 0
+                else:
+                    start_time = None
+                if event["type"] == "motion" or event["type"] == "smartDetectZone":
+                    if event["end"]:
+                        event_on = False
+                        event_length = (float(event["end"]) / 1000) - (
+                            float(event["start"]) / 1000
+                        )
+                        if event["type"] == "smartDetectZone":
+                            event_objects = event["smartDetectTypes"]
+                    else:
+                        if int(event["score"]) >= self._minimum_score:
+                            event_on = True
+                            if event["type"] == "smartDetectZone":
+                                event_objects = event["smartDetectTypes"]
                         else:
-                            start_time = None
+                            event_on = False
+                    self.device_data[camera_id]["last_motion"] = start_time
+                else:
+                    self.device_data[camera_id]["last_ring"] = start_time
+                    if event["end"]:
                         if (
-                            event["type"] == "motion"
-                            or event["type"] == "smartDetectZone"
+                            event["start"] >= event_ring_check_converted
+                            and event["end"] >= event_ring_check_converted
                         ):
-                            if event["end"]:
-                                event_on = False
-                                event_length = (float(event["end"]) / 1000) - (
-                                    float(event["start"]) / 1000
-                                )
-                                if event["type"] == "smartDetectZone":
-                                    event_objects = event["smartDetectTypes"]
-                            else:
-                                if int(event["score"]) >= self._minimum_score:
-                                    event_on = True
-                                    if event["type"] == "smartDetectZone":
-                                        event_objects = event["smartDetectTypes"]
-                                else:
-                                    event_on = False
-                            self.device_data[camera_id]["last_motion"] = start_time
+                            _LOGGER.debug("EVENT: DOORBELL HAS RUNG IN LAST 3 SECONDS!")
+                            event_ring_on = True
                         else:
-                            self.device_data[camera_id]["last_ring"] = start_time
-                            if event["end"]:
-                                if (
-                                    event["start"] >= event_ring_check_converted
-                                    and event["end"] >= event_ring_check_converted
-                                ):
-                                    _LOGGER.debug(
-                                        "EVENT: DOORBELL HAS RUNG IN LAST 3 SECONDS!"
-                                    )
-                                    event_ring_on = True
-                                else:
-                                    _LOGGER.debug(
-                                        "EVENT: DOORBELL WAS NOT RUNG IN LAST 3 SECONDS"
-                                    )
-                                    event_ring_on = False
-                            else:
-                                _LOGGER.debug("EVENT: DOORBELL IS RINGING")
-                                event_ring_on = True
+                            _LOGGER.debug(
+                                "EVENT: DOORBELL WAS NOT RUNG IN LAST 3 SECONDS"
+                            )
+                            event_ring_on = False
+                    else:
+                        _LOGGER.debug("EVENT: DOORBELL IS RINGING")
+                        event_ring_on = True
 
-                        self.device_data[camera_id]["event_start"] = start_time
-                        self.device_data[camera_id]["event_score"] = event["score"]
-                        self.device_data[camera_id]["event_on"] = event_on
-                        self.device_data[camera_id]["event_ring_on"] = event_ring_on
-                        self.device_data[camera_id]["event_type"] = event["type"]
-                        self.device_data[camera_id]["event_length"] = event_length
-                        if event_objects is not None:
-                            self.device_data[camera_id]["event_object"] = event_objects
-                        if (
-                            event["thumbnail"] is not None
-                        ):  # Only update if there is a new Motion Event
-                            self.device_data[camera_id]["event_thumbnail"] = event[
-                                "thumbnail"
-                            ]
-                        if (
-                            event["heatmap"] is not None
-                        ):  # Only update if there is a new Motion Event
-                            self.device_data[camera_id]["event_heatmap"] = event[
-                                "heatmap"
-                            ]
-            else:
-                raise NvrError(
-                    f"Fetching Eventlog failed: {response.status} - Reason: {response.reason}"
-                )
+                updated[camera_id] = self.device_data[camera_id]
+                self.device_data[camera_id]["event_start"] = start_time
+                self.device_data[camera_id]["event_score"] = event["score"]
+                self.device_data[camera_id]["event_on"] = event_on
+                self.device_data[camera_id]["event_ring_on"] = event_ring_on
+                self.device_data[camera_id]["event_type"] = event["type"]
+                self.device_data[camera_id]["event_length"] = event_length
+                if event_objects is not None:
+                    self.device_data[camera_id]["event_object"] = event_objects
+                if (
+                    event["thumbnail"] is not None
+                ):  # Only update if there is a new Motion Event
+                    self.device_data[camera_id]["event_thumbnail"] = event["thumbnail"]
+                if (
+                    event["heatmap"] is not None
+                ):  # Only update if there is a new Motion Event
+                    self.device_data[camera_id]["event_heatmap"] = event["heatmap"]
+        return updated
 
     async def get_raw_events(self, lookback: int = 86400) -> None:
         """Load the Event Log and return the Raw Data - Used for debugging only."""
@@ -498,7 +512,10 @@ class UpvServer:
             "start": str(start_time),
         }
         async with self.req.get(
-            event_uri, params=params, headers=self.headers, verify_ssl=self._verify_ssl,
+            event_uri,
+            params=params,
+            headers=self.headers,
+            verify_ssl=self._verify_ssl,
         ) as response:
             if response.status == 200:
                 events = await response.json()
@@ -515,7 +532,9 @@ class UpvServer:
 
         bootstrap_uri = f"{self._base_url}/{self.api_path}/bootstrap"
         async with self.req.get(
-            bootstrap_uri, headers=self.headers, verify_ssl=self._verify_ssl,
+            bootstrap_uri,
+            headers=self.headers,
+            verify_ssl=self._verify_ssl,
         ) as response:
             if response.status == 200:
                 json_response = await response.json()
@@ -617,9 +636,9 @@ class UpvServer:
                 return None
 
     async def get_snapshot_image_direct(self, camera_id: str) -> bytes:
-        """ Returns a Snapshot image of a recording event. 
-            This function will only work if Anonymous Snapshots
-            are enabled on the Camera.
+        """Returns a Snapshot image of a recording event.
+        This function will only work if Anonymous Snapshots
+        are enabled on the Camera.
         """
         ip_address = self.device_data[camera_id]["ip_address"]
 
@@ -633,8 +652,8 @@ class UpvServer:
                 )
 
     async def set_camera_recording(self, camera_id: str, mode: str) -> bool:
-        """ Sets the camera recoding mode to what is supplied with 'mode'.
-            Valid inputs for mode: never, motion, always
+        """Sets the camera recoding mode to what is supplied with 'mode'.
+        Valid inputs for mode: never, motion, always
         """
 
         await self.ensureAuthenticated()
@@ -662,8 +681,8 @@ class UpvServer:
                 )
 
     async def set_camera_ir(self, camera_id: str, mode: str) -> bool:
-        """ Sets the camera infrared settings to what is supplied with 'mode'.
-            Valid inputs for mode: auto, on, autoFilterOnly
+        """Sets the camera infrared settings to what is supplied with 'mode'.
+        Valid inputs for mode: auto, on, autoFilterOnly
         """
 
         await self.ensureAuthenticated()
@@ -691,8 +710,8 @@ class UpvServer:
                 )
 
     async def set_camera_status_light(self, camera_id: str, mode: bool) -> bool:
-        """ Sets the camera status light settings to what is supplied with 'mode'.
-            Valid inputs for mode: False and True
+        """Sets the camera status light settings to what is supplied with 'mode'.
+        Valid inputs for mode: False and True
         """
 
         await self.ensureAuthenticated()
@@ -713,8 +732,8 @@ class UpvServer:
                 )
 
     async def set_camera_hdr_mode(self, camera_id: str, mode: bool) -> bool:
-        """ Sets the camera HDR mode to what is supplied with 'mode'.
-            Valid inputs for mode: False and True
+        """Sets the camera HDR mode to what is supplied with 'mode'.
+        Valid inputs for mode: False and True
         """
 
         await self.ensureAuthenticated()
@@ -734,8 +753,8 @@ class UpvServer:
                 )
 
     async def set_camera_video_mode_highfps(self, camera_id: str, mode: bool) -> bool:
-        """ Sets the camera High FPS video mode to what is supplied with 'mode'.
-            Valid inputs for mode: False and True
+        """Sets the camera High FPS video mode to what is supplied with 'mode'.
+        Valid inputs for mode: False and True
         """
 
         highfps = "highFps" if mode == True else "default"
