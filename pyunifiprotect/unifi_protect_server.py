@@ -115,7 +115,8 @@ class UpvServer:
         else:
             _LOGGER.debug("Skipping camera update")
 
-        await self.async_update_events(lookback=10)
+        self._reset_camera_events()
+        await self._get_events()
 
         await self.async_connect_ws()
 
@@ -132,11 +133,6 @@ class UpvServer:
             except Exception as e:
                 _LOGGER.debug("Could not cancel ws_task")
         self.ws_task = asyncio.ensure_future(self._setup_websocket())
-
-    async def async_update_events(self, lookback: int = 10):
-        """Update events from the bootstrap endpoint."""
-        self._reset_camera_events()
-        return await self._get_events(lookback)
 
     async def unique_id(self):
         """Returns a Unique ID for this NVR."""
@@ -390,7 +386,7 @@ class UpvServer:
         for camera_id in self.device_data:
             self.device_data[camera_id].update(EMPTY_EVENT)
 
-    async def _get_events(self, lookback: int = 86400) -> None:
+    async def _get_events(self, lookback: int = 86400, camera=None) -> None:
         """Load the Event Log and loop through items to find motion events."""
 
         await self.ensureAuthenticated()
@@ -412,6 +408,8 @@ class UpvServer:
             "end": str(end_time),
             "start": str(start_time),
         }
+        if camera:
+            params["cameras"] = camera
         response = await self.req.get(
             event_uri,
             params=params,
@@ -953,8 +951,11 @@ class UpvServer:
             self.device_data[camera_id]["last_ring"] = last_ring
             _LOGGER.debug("Last Ring Set: %s at %s", camera_id, last_ring)
 
+        self.device_data[camera_id].update(EMPTY_EVENT)
+        updated = await self._get_events(10, camera_id)
+
         for subscriber in self._ws_subscriptions:
-            subscriber(action_json, data_json)
+            subscriber(updated)
 
 
 def _decode_frame(frame, position):

@@ -40,8 +40,8 @@ async def event_data():
     unsub()
 
 
-def subscriber(action_json, data_json):
-    _LOGGER.info("Subscription: action=%s data=%s", action_json, data_json)
+def subscriber(updated):
+    _LOGGER.info("Subscription: updated=%s", updated)
 
 
 logging.basicConfig(level=logging.DEBUG)
