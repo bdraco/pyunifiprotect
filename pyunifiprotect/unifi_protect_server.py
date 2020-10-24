@@ -15,6 +15,7 @@ import jwt
 from aiohttp import client_exceptions
 
 CAMERA_UPDATE_INTERVAL_SECONDS = 60
+WEBSOCKET_CHECK_INTERVAL_SECONDS = 300
 
 EMPTY_EVENT = {
     "event_start": None,
@@ -86,6 +87,7 @@ class UpvServer:
         self.ws_path = "ws"
         self._is_authenticated = False
         self._last_camera_update_time = 0
+        self._last_websocket_check = 0
         self.access_key = None
         self.device_data = {}
         self.last_update_id = None
@@ -105,6 +107,13 @@ class UpvServer:
         """Updates the status of devices."""
 
         current_time = time.time()
+        if (
+            self.is_unifi_os
+            and (current_time - WEBSOCKET_CHECK_INTERVAL_SECONDS)
+            > self._last_websocket_check
+        ):
+            await self.async_connect_ws()
+
         camera_update = False
         if (
             current_time - CAMERA_UPDATE_INTERVAL_SECONDS
@@ -115,6 +124,11 @@ class UpvServer:
             self._last_camera_update_time = time.time()
         else:
             _LOGGER.debug("Skipping camera update")
+
+        # If the websocket is connected
+        # we do not need to get events
+        if self.ws and not camera_update:
+            return {}
 
         self._reset_camera_events()
         updates = await self._get_events()
@@ -880,11 +894,15 @@ class UpvServer:
         self.ws = await session.ws_connect(
             url, verify_ssl=self._verify_ssl, headers=self.headers
         )
-        async for msg in self.ws:
-            if msg.type == aiohttp.WSMsgType.BINARY:
-                await self._process_ws_events(msg)
-            elif msg.type == aiohttp.WSMsgType.ERROR:
-                break
+        try:
+            async for msg in self.ws:
+                if msg.type == aiohttp.WSMsgType.BINARY:
+                    await self._process_ws_events(msg)
+                elif msg.type == aiohttp.WSMsgType.ERROR:
+                    break
+        finally:
+            _LOGGER.debug("websocket disconnected")
+            self.ws = None
 
     def subscribe_websocket(self, ws_callback):
         """Subscribe to websocket events.
