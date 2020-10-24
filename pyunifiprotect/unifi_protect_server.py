@@ -133,7 +133,7 @@ class UpvServer:
             return {}
 
         self._reset_camera_events()
-        updates = await self._get_events()
+        updates = await self._get_events(10)
 
         if camera_update:
             return self.devices
