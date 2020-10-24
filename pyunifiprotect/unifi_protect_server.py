@@ -150,15 +150,16 @@ class UpvServer:
             return
 
         response = await self.request("get", url=self._base_url, allow_redirects=False)
-        if response.status == 200:
-            if response.headers.get("x-csrf-token"):
-                self.is_unifi_os = True
-                self.api_path = "proxy/protect/api"
-                self.ws_path = "proxy/protect/ws"
-                self.headers = {"x-csrf-token": response.headers.get("x-csrf-token")}
-            else:
-                self.is_unifi_os = False
-            _LOGGER.debug("Unifi OS: %s", self.is_unifi_os)
+        if response.status != 200:
+            return
+        if response.headers.get("x-csrf-token"):
+            self.is_unifi_os = True
+            self.api_path = "proxy/protect/api"
+            self.ws_path = "proxy/protect/ws"
+            self.headers = {"x-csrf-token": response.headers.get("x-csrf-token")}
+        else:
+            self.is_unifi_os = False
+        _LOGGER.debug("Unifi OS: %s", self.is_unifi_os)
 
     async def ensureAuthenticated(self):
         if self.is_authenticated() is False:
