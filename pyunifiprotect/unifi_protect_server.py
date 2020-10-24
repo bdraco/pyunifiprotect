@@ -976,6 +976,12 @@ class UpvServer:
         self.device_data[camera_id].update(EMPTY_EVENT)
         updated = await self._get_events(10, camera_id)
 
+        if not updated:
+            _LOGGER.debug(
+                "Websocket triggered update but there was no event for: %s", camera_id
+            )
+            return
+
         for subscriber in self._ws_subscriptions:
             subscriber(updated)
 

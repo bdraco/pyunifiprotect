@@ -28,6 +28,7 @@ async def event_data():
         UFP_PASSWORD,
     )
 
+    await unifiprotect.check_unifi_os()
     await unifiprotect.update()
 
     unsub = unifiprotect.subscribe_websocket(subscriber)
