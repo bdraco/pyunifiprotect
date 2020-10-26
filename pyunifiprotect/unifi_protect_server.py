@@ -456,11 +456,13 @@ class UpvServer:
             headers=self.headers,
             verify_ssl=self._verify_ssl,
         )
+        _LOGGER.debug("get_events: %s params=%s", event_uri, params)
         if response.status != 200:
             raise NvrError(
                 f"Fetching Eventlog failed: {response.status} - Reason: {response.reason}"
             )
         events = await response.json()
+        _LOGGER.debug("events = %s", events)
         updated = {}
         for event in events:
             camera_id = event["camera"]
@@ -528,6 +530,7 @@ class UpvServer:
                     event["heatmap"] is not None
                 ):  # Only update if there is a new Motion Event
                     self.device_data[camera_id]["event_heatmap"] = event["heatmap"]
+        _LOGGER.debug("updated = %s", updated)
         return updated
 
     async def get_raw_events(self, lookback: int = 86400) -> None:
