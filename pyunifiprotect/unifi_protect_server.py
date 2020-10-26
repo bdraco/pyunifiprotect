@@ -368,10 +368,18 @@ class UpvServer:
                     firmware_version = str(camera["firmwareVersion"])
 
                     # Get Video Mode
-                    video_mode = "default" if camera.get("videoMode") is None else camera.get("videoMode")
+                    video_mode = (
+                        "default"
+                        if camera.get("videoMode") is None
+                        else camera.get("videoMode")
+                    )
 
                     # Get HDR Mode
-                    hdr_mode = False if camera.get("hdrMode") is None else camera.get("hdrMode")
+                    hdr_mode = (
+                        False
+                        if camera.get("hdrMode") is None
+                        else camera.get("hdrMode")
+                    )
 
                     if camera["id"] not in self.device_data:
                         # Add rtsp streaming url if enabled
@@ -1004,7 +1012,18 @@ class UpvServer:
             _LOGGER.debug("Last Ring Set: %s at %s", camera_id, last_ring)
 
         self.device_data[camera_id].update(EMPTY_EVENT)
-        updated = await self._get_events(10, camera_id)
+        try:
+            updated = await self._get_events(10, camera_id)
+        except NvrError:
+            _LOGGER.exception(
+                "Failed to fetch events after websocket update for %s", camera_id
+            )
+            return
+        except asyncio.TimeoutError:
+            _LOGGER.exception(
+                "Timed out fetching events after websocket update for %s", camera_id
+            )
+            return
 
         if not updated:
             _LOGGER.debug(
