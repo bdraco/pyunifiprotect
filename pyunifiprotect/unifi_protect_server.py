@@ -117,7 +117,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             return {}
 
         self._reset_camera_events()
-        updates = await self._get_events(10)
+        updates = await self._get_events(lookback=10)
 
         if camera_update:
             return self.devices
@@ -316,19 +316,19 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         for camera_id in self.device_data:
             self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
 
-    async def _get_events(self, lookback: int = 86400, camera=None) -> None:
+    async def _get_events(
+        self, lookback: int = 86400, camera=None, timestamp=None
+    ) -> None:
         """Load the Event Log and loop through items to find motion events."""
 
         await self.ensure_authenticated()
 
-        now = datetime.datetime.now()
-        event_start = now - datetime.timedelta(seconds=lookback)
-        event_end = now + datetime.timedelta(seconds=10)
-        event_ring_check = now - datetime.timedelta(seconds=3)
+        if timestamp is None:
+            timestamp = int(time.time() * 1000)
 
-        start_time = _to_unifi_time(event_start)
-        end_time = _to_unifi_time(event_end)
-        event_ring_check_converted = _to_unifi_time(event_ring_check)
+        start_time = timestamp - (lookback * 1000)
+        end_time = timestamp + 10000
+        event_ring_check_converted = timestamp - 3000
 
         event_uri = f"{self._base_url}/{self.api_path}/events"
 
@@ -806,16 +806,21 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             return
 
         if "lastRing" in data_json:
+            timestamp = data_json["lastRing"]
             processed_event = create_ring_event_from_websocket(data_json)
             _LOGGER.debug("Processed event from websocket: %s", processed_event)
             self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
             self.device_data[camera_id].update(processed_event)
             for subscriber in self._ws_subscriptions:
                 subscriber({camera_id: self.device_data[camera_id]})
+        else:
+            timestamp = data_json["lastMotion"]
 
         self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
         try:
-            updated = await self._get_events(10, camera_id)
+            updated = await self._get_events(
+                lookback=0, camera=camera_id, timestamp=timestamp
+            )
         except NvrError:
             _LOGGER.exception(
                 "Failed to fetch events after websocket update for %s", camera_id
