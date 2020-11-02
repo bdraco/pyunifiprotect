@@ -1,12 +1,29 @@
 """Unifi Protect Data."""
-import struct
-import zlib
 import datetime
-import logging
 import enum
+import logging
+import struct
+import time
+import zlib
 
 WS_HEADER_SIZE = 8
 _LOGGER = logging.getLogger(__name__)
+
+EVENT_SMART_DETECT_ZONE = "smartDetectZone"
+EVENT_MOTION = "motion"
+EVENT_RING = "ring"
+
+PROCESSED_EVENT_EMPTY = {
+    "event_start": None,
+    "event_score": 0,
+    "event_thumbnail": None,
+    "event_heatmap": None,
+    "event_on": False,
+    "event_ring_on": False,
+    "event_type": None,
+    "event_length": 0,
+    "event_object": [],
+}
 
 
 @enum.unique
@@ -121,32 +138,26 @@ def process_camera(server_id, host, camera):
 def process_event(event, minimum_score, event_ring_check_converted):
     """Convert an event to our format."""
     event_type = event["type"]
-    event_on = False
-    event_ring_on = False
     event_length = 0
     event_objects = None
-    processed_event = {}
+    processed_event = {"event_on": False, "event_ring_on": False}
 
     if event["start"]:
-        start_time = datetime.datetime.fromtimestamp(
-            int(event["start"]) / 1000
-        ).strftime("%Y-%m-%d %H:%M:%S")
+        start_time = _process_timestamp(event["start"])
         event_length = 0
     else:
         start_time = None
-    if event_type in ("motion", "smartDetectZone"):
+
+    if event_type in (EVENT_MOTION, EVENT_SMART_DETECT_ZONE):
         if event["end"]:
-            event_on = False
             event_length = (float(event["end"]) / 1000) - (float(event["start"]) / 1000)
-            if event_type == "smartDetectZone":
+            if event_type == EVENT_SMART_DETECT_ZONE:
                 event_objects = event["smartDetectTypes"]
         else:
             if int(event["score"]) >= minimum_score:
-                event_on = True
-                if event_type == "smartDetectZone":
+                processed_event["event_on"] = True
+                if event_type == EVENT_SMART_DETECT_ZONE:
                     event_objects = event["smartDetectTypes"]
-            else:
-                event_on = False
         processed_event["last_motion"] = start_time
     else:
         processed_event["last_ring"] = start_time
@@ -156,18 +167,15 @@ def process_event(event, minimum_score, event_ring_check_converted):
                 and event["end"] >= event_ring_check_converted
             ):
                 _LOGGER.debug("EVENT: DOORBELL HAS RUNG IN LAST 3 SECONDS!")
-                event_ring_on = True
+                processed_event["event_ring_on"] = True
             else:
                 _LOGGER.debug("EVENT: DOORBELL WAS NOT RUNG IN LAST 3 SECONDS")
-                event_ring_on = False
         else:
             _LOGGER.debug("EVENT: DOORBELL IS RINGING")
-            event_ring_on = True
+            processed_event["event_ring_on"] = True
 
     processed_event["event_start"] = start_time
     processed_event["event_score"] = event["score"]
-    processed_event["event_on"] = event_on
-    processed_event["event_ring_on"] = event_ring_on
     processed_event["event_type"] = event_type
     processed_event["event_length"] = event_length
     if event_objects is not None:
@@ -177,3 +185,43 @@ def process_event(event, minimum_score, event_ring_check_converted):
     if event["heatmap"] is not None:  # Only update if there is a new Motion Event
         processed_event["event_heatmap"] = event["heatmap"]
     return processed_event
+
+
+def create_event_from_websocket(data_json, motion_start_timestamp):
+    """Convert the websocket output into an processed event."""
+    processed_event = {
+        "event_score": None,
+        "event_on": False,
+        "event_ring_on": False,
+        "event_length": 0,
+    }
+
+    if "lastRing" in data_json:
+        processed_event["event_start"] = _process_timestamp(data_json["lastRing"])
+        processed_event["event_ring_on"] = True
+        processed_event["event_type"] = EVENT_RING
+        return processed_event
+
+    processed_event["event_type"] = EVENT_MOTION
+    if motion_start_timestamp:
+        processed_event["event_length"] = (
+            data_json["lastMotion"] - motion_start_timestamp
+        ) / 1000
+        processed_event["event_start"] = _process_timestamp(motion_start_timestamp)
+    else:
+        processed_event["event_start"] = _process_timestamp(data_json["lastMotion"])
+    if "isMotionDetected" not in data_json or data_json.get("isMotionDetected"):
+        processed_event["event_on"] = True
+    else:
+        processed_event["event_on"] = False
+    return processed_event
+
+
+def ring_lookback_time(now):
+    """Calculate the ring lookback time."""
+    event_ring_check = now - datetime.timedelta(seconds=3)
+    return int(time.mktime(event_ring_check.timetuple())) * 1000
+
+
+def _process_timestamp(ts):
+    return datetime.datetime.fromtimestamp(int(ts) / 1000).strftime("%Y-%m-%d %H:%M:%S")

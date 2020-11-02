@@ -9,27 +9,22 @@ import time
 import aiohttp
 import jwt
 from aiohttp import client_exceptions
+
 from .unifi_data import (
+    EVENT_MOTION,
+    EVENT_RING,
+    EVENT_SMART_DETECT_ZONE,
+    PROCESSED_EVENT_EMPTY,
+    ProtectWSPayloadFormat,
+    create_event_from_websocket,
+    decode_ws_frame,
     process_camera,
     process_event,
-    decode_ws_frame,
-    ProtectWSPayloadFormat,
+    ring_lookback_time,
 )
 
 CAMERA_UPDATE_INTERVAL_SECONDS = 60
 WEBSOCKET_CHECK_INTERVAL_SECONDS = 120
-
-EMPTY_EVENT = {
-    "event_start": None,
-    "event_score": 0,
-    "event_thumbnail": None,
-    "event_heatmap": None,
-    "event_on": False,
-    "event_ring_on": False,
-    "event_type": None,
-    "event_length": 0,
-    "event_object": [],
-}
 
 
 class Invalid(Exception):
@@ -75,6 +70,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         self._last_websocket_check = 0
         self.access_key = None
         self.device_data = {}
+        self._motion_start_time = {}
         self.last_update_id = None
 
         self.req = session
@@ -319,27 +315,28 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
     def _reset_camera_events(self) -> None:
         """Reset camera events between camera updates."""
         for camera_id in self.device_data:
-            self.device_data[camera_id].update(EMPTY_EVENT)
+            self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
 
-    async def _get_events(self, lookback: int = 86400, camera=None) -> None:
+    async def _get_events(self, lookback: int = 86400, camera=None, types=None) -> None:
         """Load the Event Log and loop through items to find motion events."""
 
         await self.ensure_authenticated()
 
-        event_start = datetime.datetime.now() - datetime.timedelta(seconds=lookback)
-        event_end = datetime.datetime.now() + datetime.timedelta(seconds=10)
+        now = datetime.datetime.now()
+
+        event_start = now - datetime.timedelta(seconds=lookback)
+        event_end = now + datetime.timedelta(seconds=10)
         start_time = int(time.mktime(event_start.timetuple())) * 1000
         end_time = int(time.mktime(event_end.timetuple())) * 1000
+        event_ring_check_converted = ring_lookback_time(now)
 
-        event_ring_check = datetime.datetime.now() - datetime.timedelta(seconds=3)
-        event_ring_check_converted = (
-            int(time.mktime(event_ring_check.timetuple())) * 1000
-        )
         event_uri = f"{self._base_url}/{self.api_path}/events"
         params = {
             "end": str(end_time),
             "start": str(start_time),
         }
+        if types:
+            params["types"] = types
         if camera:
             params["cameras"] = camera
         response = await self.req.get(
@@ -355,7 +352,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         updated = {}
         for event in await response.json():
-            if event["type"] not in ("motion", "ring", "smartDetectZone"):
+            if event["type"] not in (EVENT_MOTION, EVENT_RING, EVENT_SMART_DETECT_ZONE):
                 continue
 
             proccessed_event = process_event(
@@ -803,10 +800,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         data_json = pjson.loads(data_frame)
         _LOGGER.debug("Data Frame: %s", data_json)
 
-        last_motion = data_json.get("lastMotion")
-        last_ring = data_json.get("lastRing")
-
-        if last_motion is None and last_ring is None:
+        if "lastMotion" not in data_json and "lastRing" not in data_json:
             return
 
         camera_id = action_json.get("id")
@@ -814,16 +808,30 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         if camera_id not in self.device_data:
             return
 
-        if last_motion is not None:
-            self.device_data[camera_id]["last_motion"] = last_motion
-            _LOGGER.debug("Last Motion Set: %s at %s", camera_id, last_motion)
-        if last_ring is not None:
-            self.device_data[camera_id]["last_ring"] = last_ring
-            _LOGGER.debug("Last Ring Set: %s at %s", camera_id, last_ring)
+        # Start or end of a motion event
+        if data_json.get("isMotionDetected"):
+            self._motion_start_time[camera_id] = data_json["lastMotion"]
 
-        self.device_data[camera_id].update(EMPTY_EVENT)
         try:
-            updated = await self._get_events(10, camera_id)
+            processed_event = create_event_from_websocket(
+                data_json, self._motion_start_time.get(camera_id)
+            )
+            _LOGGER.debug("Processed event from websocket: %s", processed_event)
+            for subscriber in self._ws_subscriptions:
+                subscriber({camera_id: processed_event})
+
+            if processed_event["event_ring_on"]:
+                for subscriber in self._ws_subscriptions:
+                    subscriber({camera_id: PROCESSED_EVENT_EMPTY})
+        except Exception:
+            _LOGGER.exception("Failed to construct event for camera: %s", camera_id)
+
+        # EVENT_SMART_DETECT_ZONE do not come down the websocket
+        # AFAICT so we have to fetch them when we have a motion event
+        try:
+            updated = await self._get_events(
+                10, camera_id, types=EVENT_SMART_DETECT_ZONE
+            )
         except NvrError:
             _LOGGER.exception(
                 "Failed to fetch events after websocket update for %s", camera_id
@@ -834,11 +842,8 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
                 "Timed out fetching events after websocket update for %s", camera_id
             )
             return
-
         if not updated:
-            _LOGGER.debug(
-                "Websocket triggered update but there was no event for: %s", camera_id
-            )
+            _LOGGER.debug("No smart detect zone events for: %s", camera_id)
             return
 
         for subscriber in self._ws_subscriptions:
