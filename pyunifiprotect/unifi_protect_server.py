@@ -353,7 +353,11 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             )
 
         updated = {}
-        for event in await response.json().reverse():
+        events = await response.json()
+        if not events:
+            return updated
+
+        for event in events.reverse():
             if event["type"] not in ("motion", "ring", "smartDetectZone"):
                 continue
 
