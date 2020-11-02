@@ -16,11 +16,10 @@ from .unifi_data import (
     EVENT_SMART_DETECT_ZONE,
     PROCESSED_EVENT_EMPTY,
     ProtectWSPayloadFormat,
-    create_event_from_websocket,
+    create_ring_event_from_websocket,
     decode_ws_frame,
     process_camera,
     process_event,
-    ring_lookback_time,
 )
 
 CAMERA_UPDATE_INTERVAL_SECONDS = 60
@@ -317,26 +316,25 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         for camera_id in self.device_data:
             self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
 
-    async def _get_events(self, lookback: int = 86400, camera=None, types=None) -> None:
+    async def _get_events(self, lookback: int = 86400, camera=None) -> None:
         """Load the Event Log and loop through items to find motion events."""
 
         await self.ensure_authenticated()
 
         now = datetime.datetime.now()
-
         event_start = now - datetime.timedelta(seconds=lookback)
         event_end = now + datetime.timedelta(seconds=10)
-        start_time = int(time.mktime(event_start.timetuple())) * 1000
-        end_time = int(time.mktime(event_end.timetuple())) * 1000
-        event_ring_check_converted = ring_lookback_time(now)
+        start_time = event_start.timestamp() * 1000
+        end_time = event_end.timestamp() * 1000
 
+        event_ring_check = now - datetime.timedelta(seconds=3)
+        event_ring_check_converted = event_ring_check.timestamp() * 1000
         event_uri = f"{self._base_url}/{self.api_path}/events"
+
         params = {
             "end": str(end_time),
             "start": str(start_time),
         }
-        if types:
-            params["types"] = types
         if camera:
             params["cameras"] = camera
         response = await self.req.get(
@@ -351,18 +349,22 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             )
 
         updated = {}
-        for event in await response.json():
+        events = await response.json()
+        if not events:
+            return updated
+
+        for event in events.reverse():
             if event["type"] not in (EVENT_MOTION, EVENT_RING, EVENT_SMART_DETECT_ZONE):
+                continue
+
+            camera_id = event["camera"]
+            if camera_id in updated:
                 continue
 
             proccessed_event = process_event(
                 event, self._minimum_score, event_ring_check_converted
             )
-
-            camera_id = event["camera"]
-
             self.device_data[camera_id].update(proccessed_event)
-
             updated[camera_id] = self.device_data[camera_id]
 
         return updated
@@ -808,30 +810,16 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         if camera_id not in self.device_data:
             return
 
-        # Start or end of a motion event
-        if data_json.get("isMotionDetected"):
-            self._motion_start_time[camera_id] = data_json["lastMotion"]
-
-        try:
-            processed_event = create_event_from_websocket(
-                data_json, self._motion_start_time.get(camera_id)
-            )
+        if "lastRing" in data_json:
+            processed_event = create_ring_event_from_websocket(data_json)
             _LOGGER.debug("Processed event from websocket: %s", processed_event)
+            self.device_data[camera_id].update(processed_event)
             for subscriber in self._ws_subscriptions:
-                subscriber({camera_id: processed_event})
+                subscriber({camera_id: self.device_data[camera_id]})
 
-            if processed_event["event_ring_on"]:
-                for subscriber in self._ws_subscriptions:
-                    subscriber({camera_id: PROCESSED_EVENT_EMPTY})
-        except Exception:
-            _LOGGER.exception("Failed to construct event for camera: %s", camera_id)
-
-        # EVENT_SMART_DETECT_ZONE do not come down the websocket
-        # AFAICT so we have to fetch them when we have a motion event
+        self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
         try:
-            updated = await self._get_events(
-                10, camera_id, types=EVENT_SMART_DETECT_ZONE
-            )
+            updated = await self._get_events(10, camera_id)
         except NvrError:
             _LOGGER.exception(
                 "Failed to fetch events after websocket update for %s", camera_id
@@ -842,8 +830,9 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
                 "Timed out fetching events after websocket update for %s", camera_id
             )
             return
+
         if not updated:
-            _LOGGER.debug("No smart detect zone events for: %s", camera_id)
+            _LOGGER.debug("No events for: %s", camera_id)
             return
 
         for subscriber in self._ws_subscriptions:

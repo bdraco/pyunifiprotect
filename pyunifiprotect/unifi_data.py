@@ -187,40 +187,13 @@ def process_event(event, minimum_score, event_ring_check_converted):
     return processed_event
 
 
-def create_event_from_websocket(data_json, motion_start_timestamp):
+def create_ring_event_from_websocket(data_json, motion_start_timestamp):
     """Convert the websocket output into an processed event."""
-    processed_event = {
-        "event_score": None,
-        "event_on": False,
-        "event_ring_on": False,
-        "event_length": 0,
+    return {
+        "event_ring_on": True,
+        "event_start": _process_timestamp(data_json["lastRing"]),
+        "event_type": EVENT_RING,
     }
-
-    if "lastRing" in data_json:
-        processed_event["event_start"] = _process_timestamp(data_json["lastRing"])
-        processed_event["event_ring_on"] = True
-        processed_event["event_type"] = EVENT_RING
-        return processed_event
-
-    processed_event["event_type"] = EVENT_MOTION
-    if motion_start_timestamp:
-        processed_event["event_length"] = (
-            data_json["lastMotion"] - motion_start_timestamp
-        ) / 1000
-        processed_event["event_start"] = _process_timestamp(motion_start_timestamp)
-    else:
-        processed_event["event_start"] = _process_timestamp(data_json["lastMotion"])
-    if "isMotionDetected" not in data_json or data_json.get("isMotionDetected"):
-        processed_event["event_on"] = True
-    else:
-        processed_event["event_on"] = False
-    return processed_event
-
-
-def ring_lookback_time(now):
-    """Calculate the ring lookback time."""
-    event_ring_check = now - datetime.timedelta(seconds=3)
-    return int(time.mktime(event_ring_check.timetuple())) * 1000
 
 
 def _process_timestamp(ts):
