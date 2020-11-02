@@ -350,18 +350,11 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             )
 
         updated = {}
-        events = await response.json()
-        if not events:
-            return updated
-
-        for event in events.reverse():
+        for event in await response.json():
             if event["type"] not in (EVENT_MOTION, EVENT_RING, EVENT_SMART_DETECT_ZONE):
                 continue
 
             camera_id = event["camera"]
-            if camera_id in updated:
-                continue
-
             proccessed_event = process_event(
                 event, self._minimum_score, event_ring_check_converted
             )
@@ -814,6 +807,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         if "lastRing" in data_json:
             processed_event = create_ring_event_from_websocket(data_json)
             _LOGGER.debug("Processed event from websocket: %s", processed_event)
+            self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
             self.device_data[camera_id].update(processed_event)
             for subscriber in self._ws_subscriptions:
                 subscriber({camera_id: self.device_data[camera_id]})

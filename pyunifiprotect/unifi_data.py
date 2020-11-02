@@ -193,6 +193,8 @@ def create_ring_event_from_websocket(data_json, motion_start_timestamp):
         "event_ring_on": True,
         "event_start": _process_timestamp(data_json["lastRing"]),
         "event_type": EVENT_RING,
+        "event_length": 0,
+        "event_score": 100,
     }
 
 
