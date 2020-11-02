@@ -845,7 +845,3 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         for subscriber in self._ws_subscriptions:
             subscriber(updated)
-
-
-def _to_unifi_time(dt):
-    return int(time.mktime(dt.timetuple())) * 1000
