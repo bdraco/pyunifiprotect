@@ -337,6 +337,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         }
         if camera:
             params["cameras"] = camera
+        _LOGGER.debug("_get_events: %s", params)
         response = await self.req.get(
             event_uri,
             params=params,
