@@ -191,6 +191,7 @@ def create_ring_event_from_websocket(data_json, motion_start_timestamp):
     """Convert the websocket output into an processed event."""
     return {
         "event_ring_on": True,
+        "last_ring": data_json["lastRing"],
         "event_start": _process_timestamp(data_json["lastRing"]),
         "event_type": EVENT_RING,
         "event_length": 0,
