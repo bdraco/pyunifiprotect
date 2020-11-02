@@ -187,17 +187,5 @@ def process_event(event, minimum_score, event_ring_check_converted):
     return processed_event
 
 
-def create_ring_event_from_websocket(data_json, motion_start_timestamp):
-    """Convert the websocket output into an processed event."""
-    return {
-        "event_ring_on": True,
-        "last_ring": data_json["lastRing"],
-        "event_start": _process_timestamp(data_json["lastRing"]),
-        "event_type": EVENT_RING,
-        "event_length": 0,
-        "event_score": 100,
-    }
-
-
 def _process_timestamp(ts):
     return datetime.datetime.fromtimestamp(int(ts) / 1000).strftime("%Y-%m-%d %H:%M:%S")

@@ -16,7 +16,6 @@ from .unifi_data import (
     EVENT_SMART_DETECT_ZONE,
     PROCESSED_EVENT_EMPTY,
     ProtectWSPayloadFormat,
-    create_ring_event_from_websocket,
     decode_ws_frame,
     process_camera,
     process_event,
@@ -317,7 +316,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
 
     async def _get_events(
-        self, lookback: int = 86400, camera=None, start_time=None
+        self, lookback: int = 86400, camera=None, start_time=None, end_time=None
     ) -> None:
         """Load the Event Log and loop through items to find motion events."""
 
@@ -326,7 +325,8 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         now = int(time.time() * 1000)
         if start_time is None:
             start_time = now - (lookback * 1000)
-        end_time = now + 10000
+        if end_time is None:
+            end_time = now + 10000
         event_ring_check_converted = now - 3000
 
         event_uri = f"{self._base_url}/{self.api_path}/events"
@@ -805,20 +805,17 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             return
 
         if "lastRing" in data_json:
-            timestamp = data_json["lastRing"]
-            processed_event = create_ring_event_from_websocket(data_json)
-            _LOGGER.debug("Processed event from websocket: %s", processed_event)
-            self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
-            self.device_data[camera_id].update(processed_event)
-            for subscriber in self._ws_subscriptions:
-                subscriber({camera_id: self.device_data[camera_id]})
+            # Make sure the event fetch does not miss the ring
+            # by narrowing the start/end time to just the ring
+            start_time = data_json["lastRing"]
+            end_time = data_json["lastRing"]
         else:
-            timestamp = data_json["lastMotion"]
+            start_time = self._motion_start_time.get(camera_id, data_json["lastMotion"])
+            end_time = None
 
-        start_time = self._motion_start_time.get(camera_id, timestamp)
         self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
-
-        # Start or end of a motion event
+        # Remember the start or end of a motion event
+        # so we can look backwards
         if "isMotionDetected" in data_json:
             if data_json.get("isMotionDetected"):
                 self._motion_start_time[camera_id] = data_json["lastMotion"]
@@ -827,7 +824,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         try:
             updated = await self._get_events(
-                lookback=0, camera=camera_id, start_time=start_time
+                lookback=0, camera=camera_id, start_time=start_time, end_time=end_time
             )
         except NvrError:
             _LOGGER.exception(
@@ -841,7 +838,9 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             return
 
         if not updated:
-            _LOGGER.debug("No events for: %s", camera_id)
+            _LOGGER.debug(
+                "No events were found for: %s. Time may be out of sync", camera_id
+            )
             return
 
         for subscriber in self._ws_subscriptions:
