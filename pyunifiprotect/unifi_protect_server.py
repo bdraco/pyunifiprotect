@@ -326,15 +326,14 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         await self.ensure_authenticated()
 
-        event_start = datetime.datetime.now() - datetime.timedelta(seconds=lookback)
-        event_end = datetime.datetime.now() + datetime.timedelta(seconds=10)
-        start_time = int(time.mktime(event_start.timetuple())) * 1000
-        end_time = int(time.mktime(event_end.timetuple())) * 1000
+        now = datetime.datetime.now()
+        event_start = now - datetime.timedelta(seconds=lookback)
+        event_end = now + datetime.timedelta(seconds=10)
+        start_time = event_start.timestamp() * 1000
+        end_time = event_end.timestamp() * 1000
 
-        event_ring_check = datetime.datetime.now() - datetime.timedelta(seconds=3)
-        event_ring_check_converted = (
-            int(time.mktime(event_ring_check.timetuple())) * 1000
-        )
+        event_ring_check = now - datetime.timedelta(seconds=3)
+        event_ring_check_converted = event_ring_check.timestamp() * 1000
         event_uri = f"{self._base_url}/{self.api_path}/events"
         params = {
             "end": str(end_time),
@@ -354,18 +353,18 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             )
 
         updated = {}
-        for event in await response.json():
+        for event in await response.json().reverse():
             if event["type"] not in ("motion", "ring", "smartDetectZone"):
+                continue
+
+            camera_id = event["camera"]
+            if camera_id in updated:
                 continue
 
             proccessed_event = process_event(
                 event, self._minimum_score, event_ring_check_converted
             )
-
-            camera_id = event["camera"]
-
             self.device_data[camera_id].update(proccessed_event)
-
             updated[camera_id] = self.device_data[camera_id]
 
         return updated
