@@ -321,14 +321,15 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         await self.ensure_authenticated()
 
-        now = datetime.datetime.now()
+        now = datetime.datetime.utcnow()
         event_start = now - datetime.timedelta(seconds=lookback)
         event_end = now + datetime.timedelta(seconds=10)
-        start_time = event_start.timestamp() * 1000
-        end_time = event_end.timestamp() * 1000
-
         event_ring_check = now - datetime.timedelta(seconds=3)
-        event_ring_check_converted = event_ring_check.timestamp() * 1000
+
+        start_time = _to_unifi_time(event_start)
+        end_time = _to_unifi_time(event_end)
+        event_ring_check_converted = _to_unifi_time(event_ring_check)
+
         event_uri = f"{self._base_url}/{self.api_path}/events"
 
         params = {
@@ -832,3 +833,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         for subscriber in self._ws_subscriptions:
             subscriber(updated)
+
+
+def _to_unifi_time(dt):
+    return int(time.mktime(dt.timetuple())) * 1000
