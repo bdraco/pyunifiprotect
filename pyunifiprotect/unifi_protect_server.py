@@ -317,18 +317,17 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
 
     async def _get_events(
-        self, lookback: int = 86400, camera=None, timestamp=None
+        self, lookback: int = 86400, camera=None, start_time=None
     ) -> None:
         """Load the Event Log and loop through items to find motion events."""
 
         await self.ensure_authenticated()
 
-        if timestamp is None:
-            timestamp = int(time.time() * 1000)
-
-        start_time = timestamp - (lookback * 1000)
-        end_time = timestamp + 10000
-        event_ring_check_converted = timestamp - 3000
+        now = int(time.time() * 1000)
+        if start_time is None:
+            start_time = now - (lookback * 1000)
+        end_time = now + 10000
+        event_ring_check_converted = now - 3000
 
         event_uri = f"{self._base_url}/{self.api_path}/events"
 
@@ -816,10 +815,19 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         else:
             timestamp = data_json["lastMotion"]
 
+        start_time = self._motion_start_time.get(camera_id, timestamp)
         self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
+
+        # Start or end of a motion event
+        if "isMotionDetected" in data_json:
+            if data_json.get("isMotionDetected"):
+                self._motion_start_time[camera_id] = data_json["lastMotion"]
+            elif camera_id in self._motion_start_time:
+                del self._motion_start_time[camera_id]
+
         try:
             updated = await self._get_events(
-                lookback=0, camera=camera_id, timestamp=timestamp
+                lookback=0, camera=camera_id, start_time=start_time
             )
         except NvrError:
             _LOGGER.exception(
