@@ -321,7 +321,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         await self.ensure_authenticated()
 
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now()
         event_start = now - datetime.timedelta(seconds=lookback)
         event_end = now + datetime.timedelta(seconds=10)
         event_ring_check = now - datetime.timedelta(seconds=3)
