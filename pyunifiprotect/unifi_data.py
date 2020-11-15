@@ -247,7 +247,7 @@ def _process_timestamp(time_stamp):
 
 
 class ProtectStateMachine:
-    """A simple state machine for the cameras."""
+    """A simple state machine for camera events."""
 
     def __init__(self):
         self._events = FixSizeOrderedDict(max=MAX_EVENT_HISTORY_IN_STATE_MACHINE)
