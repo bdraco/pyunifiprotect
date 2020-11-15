@@ -10,10 +10,18 @@ import aiohttp
 import jwt
 from aiohttp import client_exceptions
 
-from .unifi_data import (EVENT_MOTION, EVENT_RING, EVENT_SMART_DETECT_ZONE,
-                         PROCESSED_EVENT_EMPTY, ProtectStateMachine,
-                         ProtectWSPayloadFormat, decode_ws_frame,
-                         event_from_ws_frames, process_camera, process_event)
+from .unifi_data import (
+    EVENT_MOTION,
+    EVENT_RING,
+    EVENT_SMART_DETECT_ZONE,
+    PROCESSED_EVENT_EMPTY,
+    ProtectStateMachine,
+    ProtectWSPayloadFormat,
+    decode_ws_frame,
+    event_from_ws_frames,
+    process_camera,
+    process_event,
+)
 
 CAMERA_UPDATE_INTERVAL_SECONDS = 60
 WEBSOCKET_CHECK_INTERVAL_SECONDS = 120
@@ -798,6 +806,23 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             _LOGGER.exception("Error generating event from websocket frames")
             return
 
+        self.fire_event(camera_id, processed_event)
+
+        if processed_event["event_ring_on"]:
+            # The websocket will not send any more events since
+            # doorbell rings do not have a length. We fire an
+            # additional event to turn off the ring.
+            processed_event["event_ring_on"] = False
+            self.fire_event(camera_id, processed_event)
+        elif processed_event["event_on"] and processed_event["event_length"]:
+            # If the event has ended the websocket will not give
+            # us any additional updates so we fire another callback
+            # to turn off the event.
+            processed_event["event_on"] = False
+            self.fire_event(camera_id, processed_event)
+
+    def fire_event(self, camera_id, processed_event):
+        """Callback and event to the subscribers and update data."""
         self.device_data[camera_id].update(processed_event)
         for subscriber in self._ws_subscriptions:
             subscriber([processed_event])

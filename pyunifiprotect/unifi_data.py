@@ -29,6 +29,8 @@ PROCESSED_EVENT_EMPTY = {
 MAX_SUPPORTED_CAMERAS = 256
 MAX_EVENT_HISTORY_IN_STATE_MACHINE = MAX_SUPPORTED_CAMERAS * 2
 
+LIVE_RING_FROM_WEBSOCKET = -1
+
 
 @enum.unique
 class ProtectWSPayloadFormat(enum.Enum):
@@ -182,12 +184,12 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
         raise ValueError("The action must be add or update")
 
     _LOGGER.debug("Processing event: %s", event)
-    return camera_id, process_event(
-        event, minimum_score, int(time.time() * 1000) - 3000
-    )
+    processed_event = process_event(event, minimum_score, LIVE_RING_FROM_WEBSOCKET)
+
+    return camera_id, processed_event
 
 
-def process_event(event, minimum_score, event_ring_check_converted):
+def process_event(event, minimum_score, ring_interval):
     """Convert an event to our format."""
     start = event.get("start")
     end = event.get("end")
@@ -217,18 +219,15 @@ def process_event(event, minimum_score, event_ring_check_converted):
             processed_event["event_on"] = True
     else:
         processed_event["last_ring"] = start_time
-        if end:
-            if (
-                start >= event_ring_check_converted
-                and end >= event_ring_check_converted
-            ):
+        if ring_interval == LIVE_RING_FROM_WEBSOCKET or not end:
+            _LOGGER.debug("EVENT: DOORBELL IS RINGING")
+            processed_event["event_ring_on"] = True
+        else:
+            if start >= ring_interval and end >= ring_interval:
                 _LOGGER.debug("EVENT: DOORBELL HAS RUNG IN LAST 3 SECONDS!")
                 processed_event["event_ring_on"] = True
             else:
                 _LOGGER.debug("EVENT: DOORBELL WAS NOT RUNG IN LAST 3 SECONDS")
-        else:
-            _LOGGER.debug("EVENT: DOORBELL IS RINGING")
-            processed_event["event_ring_on"] = True
 
     smart_detect_types = event.get("smartDetectTypes")
     if smart_detect_types is not None:  # Only update if there is a smart detect Event
