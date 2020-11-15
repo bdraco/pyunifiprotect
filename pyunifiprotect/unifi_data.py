@@ -191,10 +191,10 @@ def process_event(event, minimum_score, event_ring_check_converted):
     start = event.get("start")
     end = event.get("end")
     event_type = event.get("type")
+    score = event.get("score")
 
     event_length = 0
     event_objects = None
-    processed_event = {"event_on": False, "event_ring_on": False}
 
     if start:
         start_time = _process_timestamp(start)
@@ -202,16 +202,27 @@ def process_event(event, minimum_score, event_ring_check_converted):
     else:
         start_time = None
 
+    if end:
+        event_length = (float(end) / 1000) - (float(start) / 1000)
+
+    processed_event = {
+        "event_on": False,
+        "event_ring_on": False,
+        "event_score": score,
+        "event_type": event_type,
+        "event_start": start_time,
+        "event_length": event_length,
+    }
+
     if event_type in (EVENT_MOTION, EVENT_SMART_DETECT_ZONE):
         if end:
-            event_length = (float(end) / 1000) - (float(start) / 1000)
-            if event_type == EVENT_SMART_DETECT_ZONE:
-                event_objects = event["smartDetectTypes"]
+            if "smartDetectTypes" in event:
+                processed_event["event_object"] = event["smartDetectTypes"]
         else:
-            if int(event["score"]) >= minimum_score:
+            if score and int(score) >= minimum_score:
                 processed_event["event_on"] = True
-                if event_type == EVENT_SMART_DETECT_ZONE:
-                    event_objects = event["smartDetectTypes"]
+                if "smartDetectTypes" in event:
+                    processed_event["event_object"] = event["smartDetectTypes"]
         processed_event["last_motion"] = start_time
     else:
         processed_event["last_ring"] = start_time
@@ -228,16 +239,14 @@ def process_event(event, minimum_score, event_ring_check_converted):
             _LOGGER.debug("EVENT: DOORBELL IS RINGING")
             processed_event["event_ring_on"] = True
 
-    processed_event["event_start"] = start_time
-    processed_event["event_score"] = event["score"]
-    processed_event["event_type"] = event_type
-    processed_event["event_length"] = event_length
-    if event_objects is not None:
-        processed_event["event_object"] = event_objects
-    if event["thumbnail"] is not None:  # Only update if there is a new Motion Event
-        processed_event["event_thumbnail"] = event["thumbnail"]
-    if event["heatmap"] is not None:  # Only update if there is a new Motion Event
-        processed_event["event_heatmap"] = event["heatmap"]
+    thumbail = event.get("thumbnail")
+    if thumbail is not None:  # Only update if there is a new Motion Event
+        processed_event["event_thumbnail"] = thumbail
+
+    heatmap = event.get("heatmap")
+    if heatmap is not None:  # Only update if there is a new Motion Event
+        processed_event["event_heatmap"] = heatmap
+
     return processed_event
 
 
@@ -251,15 +260,15 @@ class ProtectStateMachine:
     """A simple state machine for camera events."""
 
     def __init__(self):
+        """Init the state machine."""
         self._events = FixSizeOrderedDict(max=MAX_EVENT_HISTORY_IN_STATE_MACHINE)
 
     def add(self, event_id, event_json):
+        """Add an event to the state machine."""
         self._events[event_id] = event_json
 
-    def get(self, event_id):
-        self._events.get(event_id)
-
     def update(self, event_id, new_event_json):
+        """Update an event in the state machine and return the merged event."""
         event_json = self._events.get(event_id)
         if event_json is None:
             return None
