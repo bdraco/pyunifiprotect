@@ -130,7 +130,7 @@ def process_camera(server_id, host, camera, include_events):
             ).strftime("%Y-%m-%d %H:%M:%S")
         )
         # Get the last time doorbell was ringing
-        camera_update["lastring"] = (
+        camera_update["last_ring"] = (
             None
             if camera.get("lastRing") is None
             else datetime.datetime.fromtimestamp(

@@ -305,6 +305,9 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         if not self.ws_connection and "lastUpdateId" in json_response:
             self.last_update_id = json_response["lastUpdateId"]
         for camera in json_response["cameras"]:
+            if camera["id"] not in self.device_data:
+                include_events = True
+
             self._update_camera(
                 camera["id"],
                 process_camera(server_id, self._host, camera, include_events),
