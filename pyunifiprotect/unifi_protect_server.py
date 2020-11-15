@@ -806,6 +806,9 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             _LOGGER.exception("Error generating event from websocket frames")
             return
 
+        if camera_id is None:
+            return
+
         self.fire_event(camera_id, processed_event)
 
         if processed_event["event_ring_on"]:

@@ -3,7 +3,6 @@ import datetime
 import enum
 import logging
 import struct
-import time
 import zlib
 from collections import OrderedDict
 
@@ -174,7 +173,7 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
     if action == "add":
         camera_id = data_json.get("camera")
         if camera_id is None:
-            return
+            return None, None
         state_machine.add(event_id, data_json)
         event = data_json
     elif action == "update":
@@ -255,7 +254,7 @@ class ProtectStateMachine:
 
     def __init__(self):
         """Init the state machine."""
-        self._events = FixSizeOrderedDict(max=MAX_EVENT_HISTORY_IN_STATE_MACHINE)
+        self._events = FixSizeOrderedDict(max_size=MAX_EVENT_HISTORY_IN_STATE_MACHINE)
 
     def add(self, event_id, event_json):
         """Add an event to the state machine."""
@@ -271,12 +270,16 @@ class ProtectStateMachine:
 
 
 class FixSizeOrderedDict(OrderedDict):
-    def __init__(self, *args, max=0, **kwargs):
-        self._max = max
+    """A fixed size ordered dict."""
+
+    def __init__(self, *args, max_size=0, **kwargs):
+        """Create the FixSizeOrderedDict."""
+        self._max_size = max_size
         super().__init__(*args, **kwargs)
 
     def __setitem__(self, key, value):
+        """Set an update up to the max size."""
         OrderedDict.__setitem__(self, key, value)
-        if self._max > 0:
-            if len(self) > self._max:
+        if self._max_size > 0:
+            if len(self) > self._max_size:
                 self.popitem(False)
