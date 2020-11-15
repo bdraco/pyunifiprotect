@@ -177,6 +177,8 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
     else:
         raise ValueError("The action must be add or update")
 
+    _LOGGER.debug("Processing event: %s", event)
+
     return process_event(event, minimum_score, int(time.time() * 1000) - 3000)
 
 

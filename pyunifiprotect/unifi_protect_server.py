@@ -10,10 +10,18 @@ import aiohttp
 import jwt
 from aiohttp import client_exceptions
 
-from .unifi_data import (EVENT_MOTION, EVENT_RING, EVENT_SMART_DETECT_ZONE,
-                         PROCESSED_EVENT_EMPTY, ProtectStateMachine,
-                         ProtectWSPayloadFormat, decode_ws_frame,
-                         event_from_ws_frames, process_camera, process_event)
+from .unifi_data import (
+    EVENT_MOTION,
+    EVENT_RING,
+    EVENT_SMART_DETECT_ZONE,
+    PROCESSED_EVENT_EMPTY,
+    ProtectStateMachine,
+    ProtectWSPayloadFormat,
+    decode_ws_frame,
+    event_from_ws_frames,
+    process_camera,
+    process_event,
+)
 
 CAMERA_UPDATE_INTERVAL_SECONDS = 60
 WEBSOCKET_CHECK_INTERVAL_SECONDS = 120
