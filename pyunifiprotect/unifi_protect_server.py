@@ -107,23 +107,22 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         ):
             _LOGGER.debug("Doing camera update")
             camera_update = True
-            await self._get_camera_list()
+            await self._get_camera_list(not self.ws_connection)
             self._last_camera_update_time = current_time
         else:
             _LOGGER.debug("Skipping camera update")
 
         # If the websocket is connected
         # we do not need to get events
-        if self.ws_connection and not camera_update:
+        if self.ws_connection:
             _LOGGER.debug("Skipping update since websocket is active")
-            return {}
+            if camera_update:
+                return self.devices
 
         self._reset_camera_events()
         updates = await self._get_events(lookback=10)
 
-        if camera_update:
-            return self.devices
-        return updates
+        return self.devices if camera_update else updates
 
     async def async_connect_ws(self):
         """Connect the websocket."""
@@ -287,7 +286,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
                 f"Fetching Unique ID failed: {response.status} - Reason: {response.reason}"
             )
 
-    async def _get_camera_list(self) -> None:
+    async def _get_camera_list(self, include_events) -> None:
         """Get a list of Cameras connected to the NVR."""
 
         await self.ensure_authenticated()
@@ -305,9 +304,10 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         json_response = await response.json()
         server_id = json_response["nvr"]["mac"]
         for camera in json_response["cameras"]:
-            procesed_update = process_camera(server_id, self._host, camera)
-            camera_id = str(camera["id"])
-            self._update_camera(camera_id, procesed_update)
+            self._update_camera(
+                camera["id"],
+                process_camera(server_id, self._host, camera, include_events),
+            )
 
     def _reset_camera_events(self) -> None:
         """Reset camera events between camera updates."""

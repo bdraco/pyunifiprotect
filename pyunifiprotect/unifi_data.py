@@ -59,7 +59,7 @@ def decode_ws_frame(frame, position):
     return frame, ProtectWSPayloadFormat(payload_format), position
 
 
-def process_camera(server_id, host, camera):
+def process_camera(server_id, host, camera, include_events):
     """Process the camera json."""
     # Get if camera is online
     online = camera["state"] == "CONNECTED"
@@ -70,22 +70,6 @@ def process_camera(server_id, host, camera):
     # Get Status Light Setting
     status_light = str(camera["ledSettings"]["isEnabled"])
 
-    # Get the last time motion occured
-    lastmotion = (
-        None
-        if camera["lastMotion"] is None
-        else datetime.datetime.fromtimestamp(int(camera["lastMotion"]) / 1000).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-    )
-    # Get the last time doorbell was ringing
-    lastring = (
-        None
-        if camera.get("lastRing") is None
-        else datetime.datetime.fromtimestamp(int(camera["lastRing"]) / 1000).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-    )
     # Get when the camera came online
     upsince = (
         "Offline"
@@ -117,7 +101,7 @@ def process_camera(server_id, host, camera):
             rtsp = f"rtsp://{host}:7447/{channel['rtspAlias']}"
             break
 
-    return {
+    camera_update = {
         "name": str(camera["name"]),
         "type": device_type,
         "model": str(camera["type"]),
@@ -130,14 +114,31 @@ def process_camera(server_id, host, camera):
         "status_light": status_light,
         "rtsp": rtsp,
         "up_since": upsince,
-        "last_motion": lastmotion,
-        "last_ring": lastring,
         "online": online,
         "has_highfps": has_highfps,
         "has_hdr": has_hdr,
         "video_mode": video_mode,
         "hdr_mode": hdr_mode,
     }
+    if include_events:
+        # Get the last time motion occured
+        camera_update["last_motion"] = (
+            None
+            if camera["lastMotion"] is None
+            else datetime.datetime.fromtimestamp(
+                int(camera["lastMotion"]) / 1000
+            ).strftime("%Y-%m-%d %H:%M:%S")
+        )
+        # Get the last time doorbell was ringing
+        camera_update["lastring"] = (
+            None
+            if camera.get("lastRing") is None
+            else datetime.datetime.fromtimestamp(
+                int(camera["lastRing"]) / 1000
+            ).strftime("%Y-%m-%d %H:%M:%S")
+        )
+
+    return camera_update
 
 
 def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
