@@ -90,15 +90,6 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         """Updates the status of devices."""
 
         current_time = time.time()
-        if (
-            self.is_unifi_os
-            and (current_time - WEBSOCKET_CHECK_INTERVAL_SECONDS)
-            > self._last_websocket_check
-        ):
-            _LOGGER.debug("Checking websocket")
-            self._last_websocket_check = current_time
-            await self.async_connect_ws()
-
         camera_update = False
         if (
             force_camera_update
@@ -111,6 +102,15 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             self._last_camera_update_time = current_time
         else:
             _LOGGER.debug("Skipping camera update")
+
+        if (
+            self.is_unifi_os
+            and (current_time - WEBSOCKET_CHECK_INTERVAL_SECONDS)
+            > self._last_websocket_check
+        ):
+            _LOGGER.debug("Checking websocket")
+            self._last_websocket_check = current_time
+            await self.async_connect_ws()
 
         # If the websocket is connected
         # we do not need to get events
@@ -303,6 +303,8 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             )
         json_response = await response.json()
         server_id = json_response["nvr"]["mac"]
+        if not self.ws_connection and "lastUpdateId" in json_response:
+            self.last_update_id = json_response["lastUpdateId"]
         for camera in json_response["cameras"]:
             self._update_camera(
                 camera["id"],
