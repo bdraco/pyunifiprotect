@@ -744,7 +744,11 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         try:
             async for msg in self.ws_connection:
                 if msg.type == aiohttp.WSMsgType.BINARY:
-                    self._process_ws_message_guard(msg)
+                    try:
+                        self._process_ws_message(msg)
+                    except Exception:
+                        _LOGGER.exception("Error processing websocket message")
+                        return
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
         finally:
@@ -763,14 +767,6 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         _LOGGER.debug("Adding subscription: %s", ws_callback)
         self._ws_subscriptions.append(ws_callback)
         return _unsub_ws_callback
-
-    def _process_ws_message_guard(self, msg):
-        """Process websocket message and guard for exception."""
-        try:
-            self._process_ws_message(msg)
-        except Exception:
-            _LOGGER.exception("Error processing websocket message")
-            return
 
     def _process_ws_message(self, msg):
         """Process websocket messages."""
@@ -827,7 +823,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         self._update_camera(camera_id, processed_event)
 
         for subscriber in self._ws_subscriptions:
-            subscriber([processed_event])
+            subscriber([{camera_id: processed_event}])
 
     def _update_camera(self, camera_id, processed_update):
         """Update internal state of a camera."""
