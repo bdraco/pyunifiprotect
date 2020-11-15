@@ -167,14 +167,15 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
         raise ValueError("Model key must be event or camera")
 
     action = action_json["action"]
+    event_id = action_json["id"]
 
     if action == "add":
         camera_id = data_json.get("camera")
         if camera_id is None:
             return
-        event = state_machine.add(data_json)
+        event = state_machine.add(event_id, data_json)
     elif action == "update":
-        event = state_machine.update(data_json)
+        event = state_machine.update(event_id, data_json)
         camera_id = event.get("camera")
     else:
         raise ValueError("The action must be add or update")
@@ -252,14 +253,14 @@ class ProtectStateMachine:
     def __init__(self):
         self._events = FixSizeOrderedDict(max=MAX_EVENT_HISTORY_IN_STATE_MACHINE)
 
-    def add(self, event_json):
-        self._events[event_json["id"]] = event_json
+    def add(self, event_id, event_json):
+        self._events[event_id] = event_json
 
     def get(self, event_id):
         self._events.get(event_id)
 
-    def update(self, new_event_json):
-        event_json = self._events.get(new_event_json["id"])
+    def update(self, event_id, new_event_json):
+        event_json = self._events.get(event_id)
         if event_json is None:
             return None
         event_json.update(new_event_json)
