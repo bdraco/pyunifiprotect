@@ -205,22 +205,16 @@ def process_event(event, minimum_score, event_ring_check_converted):
     processed_event = {
         "event_on": False,
         "event_ring_on": False,
-        "event_score": score,
         "event_type": event_type,
         "event_start": start_time,
         "event_length": event_length,
+        "event_score": score,
     }
 
     if event_type in (EVENT_MOTION, EVENT_SMART_DETECT_ZONE):
         processed_event["last_motion"] = start_time
-        if end:
-            if "smartDetectTypes" in event:
-                processed_event["event_object"] = event["smartDetectTypes"]
-        else:
-            if score and int(score) >= minimum_score:
-                processed_event["event_on"] = True
-                if "smartDetectTypes" in event:
-                    processed_event["event_object"] = event["smartDetectTypes"]
+        if score and int(score) >= minimum_score:
+            processed_event["event_on"] = True
     else:
         processed_event["last_ring"] = start_time
         if end:
@@ -235,6 +229,10 @@ def process_event(event, minimum_score, event_ring_check_converted):
         else:
             _LOGGER.debug("EVENT: DOORBELL IS RINGING")
             processed_event["event_ring_on"] = True
+
+    smart_detect_types = event.get("smartDetectTypes")
+    if smart_detect_types is not None:  # Only update if there is a smart detect Event
+        processed_event["event_object"] = smart_detect_types
 
     thumbail = event.get("thumbnail")
     if thumbail is not None:  # Only update if there is a new Motion Event
