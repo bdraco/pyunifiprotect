@@ -116,8 +116,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         # we do not need to get events
         if self.ws_connection:
             _LOGGER.debug("Skipping update since websocket is active")
-            if camera_update:
-                return self.devices
+            return self.devices if camera_update else {}
 
         self._reset_camera_events()
         updates = await self._get_events(lookback=10)
