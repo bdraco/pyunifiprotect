@@ -169,17 +169,18 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
     action = data_json.get("action")
 
     if action == "add":
-        if "camera" not in data_json:
+        camera_id = data_json.get("camera")
+        if camera_id is None:
             return
         event = state_machine.add(data_json)
     elif action == "update":
         event = state_machine.update(data_json)
+        camera_id = event.get("camera")
     else:
         raise ValueError("The action must be add or update")
 
     _LOGGER.debug("Processing event: %s", event)
-
-    return process_event(event, minimum_score, int(time.time() * 1000) - 3000)
+    return camera_id, process_event(event, minimum_score, int(time.time() * 1000) - 3000)
 
 
 def process_event(event, minimum_score, event_ring_check_converted):
