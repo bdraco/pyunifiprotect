@@ -823,7 +823,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         self._update_camera(camera_id, processed_event)
 
         for subscriber in self._ws_subscriptions:
-            subscriber([{camera_id: processed_event}])
+            subscriber({camera_id: processed_event})
 
     def _update_camera(self, camera_id, processed_update):
         """Update internal state of a camera."""
