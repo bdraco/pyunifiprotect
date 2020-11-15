@@ -203,7 +203,7 @@ def process_event(event, minimum_score, ring_interval):
     if start:
         start_time = _process_timestamp(start)
     if end:
-        event_length = (float(end) / 1000) - (float(start) / 1000)
+        event_length = round((float(end) / 1000) - (float(start) / 1000), 3)
 
     processed_event = {
         "event_on": False,
