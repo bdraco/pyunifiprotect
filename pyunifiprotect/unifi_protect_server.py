@@ -798,9 +798,14 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         if data_json.get("action") not in ("add", "update"):
             return
 
-        processed_event = event_from_ws_frames(
-            self._state_machine, self._minimum_score, action_json, data_json
-        )
+        try:
+            processed_event = event_from_ws_frames(
+                self._state_machine, self._minimum_score, action_json, data_json
+            )
+        except Exception:
+            _LOGGER.exception("Error generating event from websocket frames")
+            return
+
 
         for subscriber in self._ws_subscriptions:
             subscriber([processed_event])
