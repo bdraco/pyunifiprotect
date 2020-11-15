@@ -215,6 +215,7 @@ def process_event(event, minimum_score, event_ring_check_converted):
     }
 
     if event_type in (EVENT_MOTION, EVENT_SMART_DETECT_ZONE):
+        processed_event["last_motion"] = start_time
         if end:
             if "smartDetectTypes" in event:
                 processed_event["event_object"] = event["smartDetectTypes"]
@@ -223,7 +224,6 @@ def process_event(event, minimum_score, event_ring_check_converted):
                 processed_event["event_on"] = True
                 if "smartDetectTypes" in event:
                     processed_event["event_object"] = event["smartDetectTypes"]
-        processed_event["last_motion"] = start_time
     else:
         processed_event["last_ring"] = start_time
         if end:
