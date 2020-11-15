@@ -781,6 +781,9 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         if action_json.get("modelKey") != "event":
             return
 
+        if action_json.get("action") not in ("add", "update"):
+            return
+
         try:
             data_frame, data_frame_payload_format, _ = decode_ws_frame(
                 msg.data, position
@@ -794,9 +797,6 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         data_json = pjson.loads(data_frame)
         _LOGGER.debug("Data Frame: %s", data_json)
-
-        if data_json.get("action") not in ("add", "update"):
-            return
 
         try:
             camera_id, processed_event = event_from_ws_frames(

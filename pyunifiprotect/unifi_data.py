@@ -166,7 +166,7 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
     if action_json["modelKey"] != "event":
         raise ValueError("Model key must be event or camera")
 
-    action = data_json.get("action")
+    action = action_json["action"]
 
     if action == "add":
         camera_id = data_json.get("camera")
