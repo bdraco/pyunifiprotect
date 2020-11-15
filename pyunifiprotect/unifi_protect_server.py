@@ -775,10 +775,9 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         action_json = pjson.loads(action_frame)
         _LOGGER.debug("Action Frame: %s", action_json)
 
-        if (
-            action_json.get("action") != "update"
-            or action_json.get("modelKey") != "camera"
-        ):
+        if action_json.get("action") not in ("add", "update") or action_json.get(
+            "modelKey"
+        ) not in ("camera", "event"):
             return
 
         try:
