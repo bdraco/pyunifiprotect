@@ -103,15 +103,6 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         else:
             _LOGGER.debug("Skipping camera update")
 
-        if (
-            self.is_unifi_os
-            and (current_time - WEBSOCKET_CHECK_INTERVAL_SECONDS)
-            > self._last_websocket_check
-        ):
-            _LOGGER.debug("Checking websocket")
-            self._last_websocket_check = current_time
-            await self.async_connect_ws()
-
         # If the websocket is connected
         # we do not need to get events
         if self.ws_connection:
@@ -120,6 +111,15 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
         self._reset_camera_events()
         updates = await self._get_events(lookback=10)
+
+        if (
+            self.is_unifi_os
+            and (current_time - WEBSOCKET_CHECK_INTERVAL_SECONDS)
+            > self._last_websocket_check
+        ):
+            _LOGGER.debug("Checking websocket")
+            self._last_websocket_check = current_time
+            await self.async_connect_ws()
 
         return self.devices if camera_update else updates
 
