@@ -774,14 +774,14 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             return
 
         action_json = pjson.loads(action_frame)
+
+        if action_json.get("modelKey") != "event" or action_json.get("action") not in (
+            "add",
+            "update",
+        ):
+            return
+
         _LOGGER.debug("Action Frame: %s", action_json)
-
-        if action_json.get("modelKey") != "event":
-            return
-
-        if action_json.get("action") not in ("add", "update"):
-            return
-
         try:
             data_frame, data_frame_payload_format, _ = decode_ws_frame(
                 msg.data, position
