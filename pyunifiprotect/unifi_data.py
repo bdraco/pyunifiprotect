@@ -173,7 +173,8 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
         camera_id = data_json.get("camera")
         if camera_id is None:
             return
-        event = state_machine.add(event_id, data_json)
+        state_machine.add(event_id, data_json)
+        event = data_json
     elif action == "update":
         event = state_machine.update(event_id, data_json)
         camera_id = event.get("camera")
@@ -194,14 +195,10 @@ def process_event(event, minimum_score, event_ring_check_converted):
     score = event.get("score")
 
     event_length = 0
-    event_objects = None
+    start_time = None
 
     if start:
         start_time = _process_timestamp(start)
-        event_length = 0
-    else:
-        start_time = None
-
     if end:
         event_length = (float(end) / 1000) - (float(start) / 1000)
 
