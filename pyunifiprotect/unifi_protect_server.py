@@ -10,16 +10,10 @@ import aiohttp
 import jwt
 from aiohttp import client_exceptions
 
-from .unifi_data import (
-    EVENT_MOTION,
-    EVENT_RING,
-    EVENT_SMART_DETECT_ZONE,
-    PROCESSED_EVENT_EMPTY,
-    ProtectWSPayloadFormat,
-    decode_ws_frame,
-    process_camera,
-    process_event,
-)
+from .unifi_data import (EVENT_MOTION, EVENT_RING, EVENT_SMART_DETECT_ZONE,
+                         PROCESSED_EVENT_EMPTY, ProtectStateMachine,
+                         ProtectWSPayloadFormat, decode_ws_frame,
+                         event_from_ws_frames, process_camera, process_event)
 
 CAMERA_UPDATE_INTERVAL_SECONDS = 60
 WEBSOCKET_CHECK_INTERVAL_SECONDS = 120
@@ -68,6 +62,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         self._last_websocket_check = 0
         self.access_key = None
         self.device_data = {}
+        self._state_machine = ProtectStateMachine()
         self._motion_start_time = {}
         self.last_update_id = None
 
@@ -775,10 +770,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         action_json = pjson.loads(action_frame)
         _LOGGER.debug("Action Frame: %s", action_json)
 
-        if (
-            action_json.get("action") != "update"
-            or action_json.get("modelKey") != "camera"
-        ):
+        if action_json.get("modelKey") != "event":
             return
 
         try:
@@ -795,52 +787,12 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         data_json = pjson.loads(data_frame)
         _LOGGER.debug("Data Frame: %s", data_json)
 
-        if "lastMotion" not in data_json and "lastRing" not in data_json:
+        if data_json.get("action") not in ("add", "update"):
             return
 
-        camera_id = action_json.get("id")
-
-        if camera_id not in self.device_data:
-            return
-
-        if "lastRing" in data_json:
-            # Make sure the event fetch does not miss the ring
-            # by narrowing the start/end time to just the ring
-            start_time = data_json["lastRing"]
-            end_time = data_json["lastRing"]
-        else:
-            start_time = self._motion_start_time.get(camera_id, data_json["lastMotion"])
-            end_time = None
-
-        self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
-        # Remember the start or end of a motion event
-        # so we can look backwards
-        if "isMotionDetected" in data_json:
-            if data_json.get("isMotionDetected"):
-                self._motion_start_time[camera_id] = data_json["lastMotion"]
-            elif camera_id in self._motion_start_time:
-                del self._motion_start_time[camera_id]
-
-        try:
-            updated = await self._get_events(
-                camera=camera_id, start_time=start_time, end_time=end_time
-            )
-        except NvrError:
-            _LOGGER.exception(
-                "Failed to fetch events after websocket update for %s", camera_id
-            )
-            return
-        except asyncio.TimeoutError:
-            _LOGGER.exception(
-                "Timed out fetching events after websocket update for %s", camera_id
-            )
-            return
-
-        if not updated:
-            _LOGGER.debug(
-                "No events were found for: %s. Time may be out of sync", camera_id
-            )
-            return
+        processed_event = event_from_ws_frames(
+            self._state_machine, self._minimum_score, action_json, data_json
+        )
 
         for subscriber in self._ws_subscriptions:
-            subscriber(updated)
+            subscriber([processed_event])
