@@ -180,7 +180,9 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
         raise ValueError("The action must be add or update")
 
     _LOGGER.debug("Processing event: %s", event)
-    return camera_id, process_event(event, minimum_score, int(time.time() * 1000) - 3000)
+    return camera_id, process_event(
+        event, minimum_score, int(time.time() * 1000) - 3000
+    )
 
 
 def process_event(event, minimum_score, event_ring_check_converted):

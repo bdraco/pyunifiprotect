@@ -809,4 +809,3 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         self.device_data[camera_id].update(processed_event)
         for subscriber in self._ws_subscriptions:
             subscriber([processed_event])
-
