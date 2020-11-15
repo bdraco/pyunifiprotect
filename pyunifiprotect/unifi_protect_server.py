@@ -744,7 +744,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         try:
             async for msg in self.ws_connection:
                 if msg.type == aiohttp.WSMsgType.BINARY:
-                    await self._process_ws_events(msg)
+                    self._process_ws_message_guard(msg)
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
         finally:
@@ -764,15 +764,19 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         self._ws_subscriptions.append(ws_callback)
         return _unsub_ws_callback
 
-    async def _process_ws_events(self, msg):
-        """Process websocket messages."""
+    def _process_ws_message_guard(self, msg):
+        """Process websocket message and guard for exception."""
         try:
-            action_frame, action_frame_payload_format, position = decode_ws_frame(
-                msg.data, 0
-            )
+            self._process_ws_message(msg)
         except Exception:
-            _LOGGER.exception("Error processing action frame")
+            _LOGGER.exception("Error processing websocket message")
             return
+
+    def _process_ws_message(self, msg):
+        """Process websocket messages."""
+        action_frame, action_frame_payload_format, position = decode_ws_frame(
+            msg.data, 0
+        )
 
         if action_frame_payload_format != ProtectWSPayloadFormat.JSON:
             return
@@ -786,13 +790,7 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             return
 
         _LOGGER.debug("Action Frame: %s", action_json)
-        try:
-            data_frame, data_frame_payload_format, _ = decode_ws_frame(
-                msg.data, position
-            )
-        except Exception:
-            _LOGGER.exception("Error processing data frame")
-            return
+        data_frame, data_frame_payload_format, _ = decode_ws_frame(msg.data, position)
 
         if data_frame_payload_format != ProtectWSPayloadFormat.JSON:
             return
@@ -800,37 +798,29 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         data_json = pjson.loads(data_frame)
         _LOGGER.debug("Data Frame: %s", data_json)
 
-        try:
-            camera_id, processed_event = event_from_ws_frames(
-                self._state_machine, self._minimum_score, action_json, data_json
-            )
-        except Exception:
-            _LOGGER.exception("Error generating event from websocket frames")
-            return
+        camera_id, processed_event = event_from_ws_frames(
+            self._state_machine, self._minimum_score, action_json, data_json
+        )
 
         if camera_id is None:
             return
 
         _LOGGER.debug("Procesed event: %s", processed_event)
 
-        try:
-            self.fire_event(camera_id, processed_event)
+        self.fire_event(camera_id, processed_event)
 
-            if processed_event["event_ring_on"]:
-                # The websocket will not send any more events since
-                # doorbell rings do not have a length. We fire an
-                # additional event to turn off the ring.
-                processed_event["event_ring_on"] = False
-                self.fire_event(camera_id, processed_event)
-            elif processed_event["event_on"] and processed_event["event_length"]:
-                # If the event has ended the websocket will not give
-                # us any additional updates so we fire another callback
-                # to turn off the event.
-                processed_event["event_on"] = False
-                self.fire_event(camera_id, processed_event)
-        except Exception:
-            _LOGGER.exception("Error firing events")
-            return
+        if processed_event["event_ring_on"]:
+            # The websocket will not send any more events since
+            # doorbell rings do not have a length. We fire an
+            # additional event to turn off the ring.
+            processed_event["event_ring_on"] = False
+            self.fire_event(camera_id, processed_event)
+        elif processed_event["event_on"] and processed_event["event_length"]:
+            # If the event has ended the websocket will not give
+            # us any additional updates so we fire another callback
+            # to turn off the event.
+            processed_event["event_on"] = False
+            self.fire_event(camera_id, processed_event)
 
     def fire_event(self, camera_id, processed_event):
         """Callback and event to the subscribers and update data."""
