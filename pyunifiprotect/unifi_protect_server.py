@@ -806,6 +806,5 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
             _LOGGER.exception("Error generating event from websocket frames")
             return
 
-
         for subscriber in self._ws_subscriptions:
             subscriber([processed_event])

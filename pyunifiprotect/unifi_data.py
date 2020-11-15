@@ -184,20 +184,23 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
 
 def process_event(event, minimum_score, event_ring_check_converted):
     """Convert an event to our format."""
-    event_type = event["type"]
+    start = event.get("start")
+    end = event.get("end")
+    event_type = event.get("type")
+
     event_length = 0
     event_objects = None
     processed_event = {"event_on": False, "event_ring_on": False}
 
-    if event["start"]:
-        start_time = _process_timestamp(event["start"])
+    if start:
+        start_time = _process_timestamp(start)
         event_length = 0
     else:
         start_time = None
 
     if event_type in (EVENT_MOTION, EVENT_SMART_DETECT_ZONE):
-        if event["end"]:
-            event_length = (float(event["end"]) / 1000) - (float(event["start"]) / 1000)
+        if end:
+            event_length = (float(end) / 1000) - (float(start) / 1000)
             if event_type == EVENT_SMART_DETECT_ZONE:
                 event_objects = event["smartDetectTypes"]
         else:
@@ -208,10 +211,10 @@ def process_event(event, minimum_score, event_ring_check_converted):
         processed_event["last_motion"] = start_time
     else:
         processed_event["last_ring"] = start_time
-        if event["end"]:
+        if end:
             if (
-                event["start"] >= event_ring_check_converted
-                and event["end"] >= event_ring_check_converted
+                start >= event_ring_check_converted
+                and end >= event_ring_check_converted
             ):
                 _LOGGER.debug("EVENT: DOORBELL HAS RUNG IN LAST 3 SECONDS!")
                 processed_event["event_ring_on"] = True
