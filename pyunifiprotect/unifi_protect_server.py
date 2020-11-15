@@ -7,8 +7,8 @@ import logging
 import time
 
 import aiohttp
-import jwt
 from aiohttp import client_exceptions
+import jwt
 
 from .unifi_data import (
     EVENT_MOTION,
@@ -307,16 +307,12 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         for camera in json_response["cameras"]:
             procesed_update = process_camera(server_id, self._host, camera)
             camera_id = str(camera["id"])
-
-            if camera_id in self.device_data:
-                self.device_data[camera_id].update(procesed_update)
-            else:
-                self.device_data[camera_id] = procesed_update
+            self._update_camera(camera_id, procesed_update)
 
     def _reset_camera_events(self) -> None:
         """Reset camera events between camera updates."""
         for camera_id in self.device_data:
-            self.device_data[camera_id].update(PROCESSED_EVENT_EMPTY)
+            self._update_camera(camera_id, PROCESSED_EVENT_EMPTY)
 
     async def _get_events(
         self, lookback: int = 86400, camera=None, start_time=None, end_time=None
@@ -357,10 +353,10 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
                 continue
 
             camera_id = event["camera"]
-            proccessed_event = process_event(
-                event, self._minimum_score, event_ring_check_converted
+            self._update_camera(
+                camera_id,
+                process_event(event, self._minimum_score, event_ring_check_converted),
             )
-            self.device_data[camera_id].update(proccessed_event)
             updated[camera_id] = self.device_data[camera_id]
 
         return updated
@@ -413,7 +409,8 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         """Returns the last recorded Thumbnail, based on Camera ID."""
 
         await self.ensure_authenticated()
-        await self._get_events()
+        if not self.ws_connection:
+            await self._get_events()
 
         thumbnail_id = self.device_data[camera_id]["event_thumbnail"]
 
@@ -442,7 +439,8 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
         """Returns the last recorded Heatmap, based on Camera ID."""
 
         await self.ensure_authenticated()
-        await self._get_events()
+        if not self.ws_connection:
+            await self._get_events()
 
         heatmap_id = self.device_data[camera_id]["event_heatmap"]
 
@@ -826,6 +824,11 @@ class UpvServer:  # pylint: disable=too-many-public-methods, too-many-instance-a
 
     def fire_event(self, camera_id, processed_event):
         """Callback and event to the subscribers and update data."""
-        self.device_data[camera_id].update(processed_event)
+        self._update_camera(camera_id, processed_event)
+
         for subscriber in self._ws_subscriptions:
             subscriber([processed_event])
+
+    def _update_camera(self, camera_id, processed_update):
+        """Update internal state of a camera."""
+        self.device_data.setdefault(camera_id, {}).update(processed_update)

@@ -1,10 +1,10 @@
 """Unifi Protect Data."""
+from collections import OrderedDict
 import datetime
 import enum
 import logging
 import struct
 import zlib
-from collections import OrderedDict
 
 WS_HEADER_SIZE = 8
 _LOGGER = logging.getLogger(__name__)
