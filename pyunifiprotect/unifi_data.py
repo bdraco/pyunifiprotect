@@ -92,6 +92,13 @@ def decode_ws_frame(frame, position):
     return frame, ProtectWSPayloadFormat(payload_format), position
 
 
+def process_light(server_id, host, light, include_events):
+    """Process the light json."""
+
+    # TODO: impement light processing
+    return {}
+
+
 def process_camera(server_id, host, camera, include_events):
     """Process the camera json."""
 
@@ -250,6 +257,7 @@ def event_from_ws_frames(state_machine, minimum_score, action_json, data_json):
 
     return camera_id, processed_event
 
+#TODO: implement light_update_from_ws_frames
 
 def camera_update_from_ws_frames(state_machine, host, action_json, data_json):
     """Convert a websocket frame to internal format."""
